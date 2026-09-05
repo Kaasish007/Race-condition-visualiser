@@ -1,0 +1,1025 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>ThreadSync — OS Concurrency Visualizer</title>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet" onerror="this.remove()">
+<style>
+:root {
+  --bg:      #0a0d13;
+  --bg2:     #0f1319;
+  --bg3:     #151b24;
+  --panel:   #111720;
+  --border:  rgba(255,255,255,0.06);
+  --bdr2:    rgba(255,255,255,0.11);
+  --text:    #e1e7ef;
+  --text2:   #a0aec0;
+  --muted:   #4a5568;
+  --accent:  #3b9eff;
+  --green:   #38d9a9;
+  --red:     #fc5c7d;
+  --orange:  #fd9644;
+  --purple:  #9b72f8;
+  --yellow:  #f9ca24;
+  --cyan:    #00d2ff;
+  --sans:    'Inter', system-ui, -apple-system, sans-serif;
+  --mono:    'JetBrains Mono', 'Cascadia Code', ui-monospace, monospace;
+}
+*, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+body {
+  background: var(--bg); color: var(--text);
+  font-family: var(--sans); font-size: 13px;
+  min-height: 100vh; overflow-x: hidden; line-height: 1.5;
+}
+body::before {
+  content: ''; position: fixed; inset: 0;
+  background-image:
+    linear-gradient(rgba(59,158,255,0.022) 1px, transparent 1px),
+    linear-gradient(90deg, rgba(59,158,255,0.022) 1px, transparent 1px);
+  background-size: 48px 48px; pointer-events: none; z-index: 0;
+}
+.app { position: relative; z-index: 1; max-width: 1400px; margin: 0 auto; padding: 24px 28px 72px; }
+
+/* HEADER */
+.header { display: flex; align-items: center; justify-content: space-between; margin-bottom: 28px; padding-bottom: 20px; border-bottom: 1px solid var(--border); }
+.logo-eyebrow { font-size: 10px; font-weight: 600; letter-spacing: 3px; text-transform: uppercase; color: var(--accent); margin-bottom: 4px; display: flex; align-items: center; gap: 8px; }
+.logo-eyebrow::before { content:''; width:16px; height:1px; background:var(--accent); }
+.logo-title { font-size: 26px; font-weight: 700; letter-spacing: -0.5px; color: var(--text); }
+.logo-title span { color: var(--accent); }
+.logo-sub { font-size: 12px; color: var(--text2); margin-top: 3px; }
+.status-pill { display: flex; align-items: center; gap: 8px; background: var(--bg3); border: 1px solid var(--border); border-radius: 20px; padding: 6px 14px; font-size: 11px; font-weight: 600; color: var(--text2); letter-spacing: .5px; text-transform: uppercase; }
+.dot { width: 7px; height: 7px; border-radius: 50%; background: var(--muted); transition: all .3s; }
+.dot.on { background: var(--green); box-shadow: 0 0 8px var(--green); animation: blink 1.2s infinite; }
+@keyframes blink { 0%,100%{opacity:1} 50%{opacity:.25} }
+
+/* TABS */
+.tabs { display: flex; gap: 1px; margin-bottom: 22px; background: var(--bg2); padding: 4px; border-radius: 10px; border: 1px solid var(--border); width: fit-content; }
+.tab { padding: 8px 22px; border: none; border-radius: 7px; cursor: pointer; font-family: var(--sans); font-size: 12px; font-weight: 600; letter-spacing: .3px; transition: all .18s; background: transparent; color: var(--muted); }
+.tab:hover:not(.au,.am,.as,.ar) { color: var(--text); background: var(--bg3); }
+.tab.au { background: rgba(252,92,125,.13); color: var(--red);    border: 1px solid rgba(252,92,125,.2); }
+.tab.am { background: rgba(56,217,169,.11); color: var(--green);  border: 1px solid rgba(56,217,169,.2); }
+.tab.as { background: rgba(155,114,248,.13);color: var(--purple); border: 1px solid rgba(155,114,248,.2); }
+.tab.ar { background: rgba(59,158,255,.13); color: var(--accent); border: 1px solid rgba(59,158,255,.2); }
+.tab-sep { width: 1px; background: var(--border); margin: 4px 2px; }
+
+/* LAYOUT */
+.grid { display: grid; grid-template-columns: 288px 1fr; gap: 16px; align-items: start; }
+@media(max-width:900px){ .grid{grid-template-columns:1fr} }
+.rcol { display: flex; flex-direction: column; gap: 16px; }
+
+/* CARD */
+.card { background: var(--panel); border: 1px solid var(--border); border-radius: 12px; padding: 18px 20px; }
+.card-title { font-size: 10px; font-weight: 700; letter-spacing: 2px; text-transform: uppercase; color: var(--muted); margin-bottom: 16px; display: flex; align-items: center; gap: 10px; }
+.card-title::after { content:''; flex:1; height:1px; background:var(--border); }
+
+/* CONTROLS */
+.ctrl { margin-bottom: 14px; }
+.ctrl label { display: flex; justify-content: space-between; align-items: center; font-size: 11px; font-weight: 500; color: var(--text2); text-transform: uppercase; letter-spacing: .8px; margin-bottom: 7px; }
+.ctrl label b { color: var(--text); font-size: 14px; font-weight: 700; font-style: normal; }
+input[type=range] { -webkit-appearance: none; width: 100%; height: 2px; background: var(--bg3); border-radius: 2px; outline: none; border: none; }
+input[type=range]::-webkit-slider-thumb { -webkit-appearance: none; width: 13px; height: 13px; border-radius: 50%; background: var(--accent); cursor: pointer; box-shadow: 0 0 6px rgba(59,158,255,.5); transition: transform .15s; }
+input[type=range]::-webkit-slider-thumb:hover { transform: scale(1.25); }
+
+/* BUTTONS */
+.btns { display: flex; gap: 8px; margin-top: 16px; }
+.btn { flex: 1; padding: 9px 0; border: 1px solid var(--bdr2); border-radius: 7px; background: transparent; color: var(--text2); font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: .5px; text-transform: uppercase; cursor: pointer; transition: all .18s; }
+.btn:hover:not(:disabled) { color: var(--text); background: var(--bg3); }
+.btn:disabled { opacity: .3; cursor: not-allowed; }
+.btn-go { background: var(--accent); color: #fff; border-color: var(--accent); box-shadow: 0 0 14px rgba(59,158,255,.25); font-weight: 700; }
+.btn-go:hover:not(:disabled) { background: #5aaeff; border-color: #5aaeff; }
+
+/* EXPLAIN */
+.explain { margin-top: 14px; padding: 12px 14px; border-radius: 8px; font-size: 11.5px; line-height: 1.8; color: var(--text2); border-left: 3px solid var(--muted); }
+.explain.eu { border-color: var(--red);    background: rgba(252,92,125,.04); }
+.explain.em { border-color: var(--green);  background: rgba(56,217,169,.04); }
+.explain.es { border-color: var(--purple); background: rgba(155,114,248,.04); }
+.explain strong { color: var(--text); font-weight: 600; }
+.kw  { color: var(--purple); font-family: var(--mono); font-size: 11px; }
+.fn  { color: var(--orange);  font-family: var(--mono); font-size: 11px; }
+
+/* COUNTER */
+.chero { display: flex; align-items: center; justify-content: space-between; gap: 16px; }
+.cnum { font-family: var(--mono); font-size: 68px; font-weight: 600; line-height: 1; color: var(--accent); letter-spacing: -3px; transition: color .2s; }
+.cnum.cr { color: var(--red); }
+.cnum.cw { color: var(--green); }
+.clbl { color: var(--text2); font-size: 11px; margin-top: 4px; }
+.stats { display: grid; grid-template-columns: 1fr 1fr; gap: 8px; flex: 1; }
+.sbox { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; text-align: center; }
+.sval { font-family: var(--mono); font-size: 22px; font-weight: 600; color: var(--accent); }
+.sval.good { color: var(--green); }
+.sval.bad  { color: var(--red); animation: shake .3s; }
+@keyframes shake { 0%,100%{transform:translateX(0)} 30%{transform:translateX(-3px)} 70%{transform:translateX(3px)} }
+.skey { font-size: 9px; color: var(--muted); text-transform: uppercase; letter-spacing: 1.5px; margin-top: 3px; }
+
+/* PROGRESS */
+.progwrap { margin-top: 14px; }
+.progmeta { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-bottom: 6px; }
+.progtrack { height: 4px; background: var(--bg2); border-radius: 2px; overflow: hidden; }
+.progfill { height: 100%; border-radius: 2px; background: var(--accent); transition: width .2s; }
+.pf-r { background: var(--red); }
+.pf-m { background: var(--green); }
+.pf-s { background: var(--purple); }
+
+/* ALERTS */
+.alert { display: none; padding: 10px 14px; border-radius: 8px; margin-top: 12px; font-size: 11.5px; font-weight: 600; align-items: center; gap: 8px; }
+.alert.show { display: flex; }
+.ad { background: rgba(252,92,125,.09); border: 1px solid rgba(252,92,125,.25); color: var(--red); }
+.ag { background: rgba(56,217,169,.09); border: 1px solid rgba(56,217,169,.25); color: var(--green); }
+
+/* THREAD CARDS */
+.tgrid { display: grid; grid-template-columns: repeat(auto-fill,minmax(128px,1fr)); gap: 8px; }
+.tc { background: var(--bg2); border: 1px solid var(--border); border-radius: 9px; padding: 11px; transition: border-color .2s; position: relative; }
+.tc::before { content:''; position:absolute; top:0; left:0; right:0; height:2px; border-radius:9px 9px 0 0; background:var(--muted); transition:background .2s; }
+.tc.sta::before { background:var(--accent); }
+.tc.stl::before { background:var(--green); }
+.tc.stw::before { background:var(--orange); }
+.tc.str::before { background:var(--red); }
+.tc.sta { border-color:rgba(59,158,255,.3); }
+.tc.stl { border-color:rgba(56,217,169,.3); }
+.tc.stw { border-color:rgba(253,150,68,.3); }
+.tc.str { border-color:rgba(252,92,125,.4); animation:flk .35s 2; }
+.tc.std { opacity:.4; }
+@keyframes flk { 0%,100%{opacity:1} 50%{opacity:.5} }
+.tid  { font-size: 9px; color: var(--muted); letter-spacing: 1.5px; text-transform: uppercase; font-weight: 600; }
+.tst  { font-size: 11px; font-weight: 700; margin: 5px 0 3px; color: var(--accent); font-family: var(--mono); }
+.tst.READ,.tst.READ { color:var(--accent); }
+.tst.WRITE { color:var(--green); }
+.tst.RACE  { color:var(--red); }
+.tst.LOCKED,.tst.SEM_ACQUIRED { color:var(--green); }
+.tst.WAIT_LOCK,.tst.WAIT_SEM { color:var(--orange); }
+.tst.DONE  { color:var(--muted); }
+.tnote { font-size:9px; color:var(--muted); line-height:1.3; min-height:12px; }
+.tnote.ir { color:var(--red); font-weight:600; }
+.tptrack { height:2px; background:var(--bg); border-radius:1px; margin-top:7px; }
+.tpfill  { height:100%; background:var(--accent); border-radius:1px; transition:width .3s; }
+
+/* RAG */
+#rag-wrap,#rp-rag-wrap { background: var(--bg2); border-radius: 10px; overflow: hidden; border: 1px solid var(--border); }
+#rag-canvas,#rp-rag-canvas { display: block; width: 100%; }
+.rag-legend { display: flex; flex-wrap: wrap; gap: 14px; padding: 10px 14px; border-top: 1px solid var(--border); font-size: 10px; color: var(--text2); font-weight: 500; }
+.rag-leg { display: flex; align-items: center; gap: 6px; }
+.rag-leg-solid { width: 22px; height: 2px; border-radius: 1px; }
+
+/* EVENT LOG */
+.lhead { display: grid; grid-template-columns: 54px 36px 110px 40px 40px 1fr; gap: 6px; padding: 0 2px 9px; border-bottom: 1px solid var(--bdr2); font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); font-weight: 700; }
+.lbody { max-height: 180px; overflow-y: auto; }
+.lbody::-webkit-scrollbar { width: 3px; }
+.lbody::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 2px; }
+.lrow { display: grid; grid-template-columns: 54px 36px 110px 40px 40px 1fr; gap: 6px; padding: 5px 2px; border-bottom: 1px solid rgba(255,255,255,.02); font-size: 11px; }
+.lrow:hover { background: rgba(255,255,255,.02); }
+.lrow.ir { background: rgba(252,92,125,.04); }
+.lt   { color: var(--muted); font-family: var(--mono); }
+.ltid { color: var(--accent); font-weight: 700; font-family: var(--mono); }
+.lst  { font-weight: 700; font-family: var(--mono); font-size: 10px; }
+.lst.READ { color:var(--accent); }
+.lst.WRITE { color:var(--green); }
+.lst.LOCKED,.lst.SEM_ACQUIRED { color:var(--green); }
+.lst.UNLOCKED,.lst.SEM_RELEASED { color:var(--muted); }
+.lst.WAIT_LOCK,.lst.WAIT_SEM { color:var(--orange); }
+.lst.DONE { color:var(--muted); }
+.ln { color: var(--muted); }
+.ln.ir { color: var(--red); font-weight: 600; }
+
+/* REPLAY */
+#replay-panel { display: none; }
+#replay-panel.visible { display: block; }
+#sim-panel.hidden { display: none; }
+.drop-zone { border: 2px dashed var(--bdr2); border-radius: 10px; padding: 28px; text-align: center; cursor: pointer; transition: all .2s; background: var(--bg2); color: var(--text2); font-size: 12px; }
+.drop-zone:hover,.drop-zone.drag { border-color: var(--accent); color: var(--accent); background: rgba(59,158,255,.04); }
+.drop-zone .dz-icon { font-size: 26px; margin-bottom: 8px; }
+.drop-zone .dz-hint { font-size: 10px; margin-top: 5px; opacity: .6; }
+.rp-bar { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; padding: 11px 14px; background: var(--bg2); border: 1px solid var(--border); border-radius: 9px; margin-bottom: 14px; }
+.rp-btn { padding: 6px 14px; border-radius: 6px; border: 1px solid var(--bdr2); cursor: pointer; font-family: var(--sans); font-size: 11px; font-weight: 600; letter-spacing: .3px; transition: all .16s; background: var(--bg3); color: var(--text); }
+.rp-btn:hover:not(:disabled) { border-color: var(--accent); color: var(--accent); }
+.rp-btn:disabled { opacity: .3; cursor: default; }
+.rp-btn.play-active { background: rgba(56,217,169,.1); border-color: var(--green); color: var(--green); }
+.rp-btn.danger { border-color: rgba(252,92,125,.3); color: var(--red); }
+.rp-btn.danger:hover:not(:disabled) { background: rgba(252,92,125,.08); }
+.rp-speed-wrap { display: flex; align-items: center; gap: 8px; margin-left: auto; }
+.rp-speed-wrap label { font-size: 10px; color: var(--muted); white-space: nowrap; font-weight: 600; text-transform: uppercase; letter-spacing: .5px; }
+.rp-speed-wrap input[type=range] { width: 80px; }
+.rp-scrub-wrap { padding: 0 2px 12px; }
+.rp-scrub-meta { display: flex; justify-content: space-between; font-size: 10px; color: var(--muted); margin-bottom: 6px; }
+.rp-scrub { width: 100%; cursor: pointer; }
+.rp-stats { display: grid; grid-template-columns: repeat(5,1fr); gap: 8px; margin-bottom: 14px; }
+.rp-stat { background: var(--bg2); border: 1px solid var(--border); border-radius: 8px; padding: 10px 12px; text-align: center; }
+.rp-stat .rsv { font-family: var(--mono); font-size: 20px; font-weight: 700; color: var(--accent); }
+.rp-stat .rsv.bad { color: var(--red); }
+.rp-stat .rsv.good { color: var(--green); }
+.rp-stat .rsk { font-size: 9px; color: var(--muted); margin-top: 3px; text-transform: uppercase; letter-spacing: 1.5px; font-weight: 600; }
+.rp-spotlight { background: var(--bg2); border: 1px solid var(--border); border-radius: 9px; padding: 14px 16px; margin-bottom: 14px; display: flex; align-items: center; gap: 16px; min-height: 64px; }
+.rp-spot-tid { width: 38px; height: 38px; border-radius: 50%; display: flex; align-items: center; justify-content: center; font-weight: 700; font-size: 12px; flex-shrink: 0; font-family: var(--mono); background: rgba(59,158,255,.1); color: var(--accent); border: 2px solid rgba(59,158,255,.25); transition: all .2s; }
+.rp-spot-tid.race  { background: rgba(252,92,125,.1); color: var(--red);   border-color: rgba(252,92,125,.3); }
+.rp-spot-tid.write { background: rgba(56,217,169,.1); color: var(--green); border-color: rgba(56,217,169,.25); }
+.rp-spot-body { flex: 1; }
+.rp-spot-state { font-size: 12px; font-weight: 700; color: var(--accent); margin-bottom: 3px; font-family: var(--mono); }
+.rp-spot-state.RACE { color: var(--red); }
+.rp-spot-state.WRITE { color: var(--green); }
+.rp-spot-state.LOCKED,.rp-spot-state.SEM_ACQUIRED { color: var(--green); }
+.rp-spot-state.WAIT_LOCK,.rp-spot-state.WAIT_SEM { color: var(--orange); }
+.rp-spot-state.DONE { color: var(--muted); }
+.rp-spot-note { font-size: 10.5px; color: var(--text2); line-height: 1.5; }
+.rp-spot-note.race { color: var(--red); font-weight: 600; }
+.rp-spot-vals { display: flex; flex-direction: column; gap: 4px; align-items: flex-end; flex-shrink: 0; }
+.rp-spot-val { font-size: 10px; color: var(--muted); }
+.rp-spot-val span { font-weight: 700; color: var(--text); font-family: var(--mono); }
+.rp-lane { display: flex; align-items: center; gap: 10px; padding: 5px 0; border-bottom: 1px solid rgba(255,255,255,.03); }
+.rp-lane:last-child { border-bottom: none; }
+.rp-lid   { color: var(--accent); width: 24px; text-align: right; font-weight: 700; flex-shrink: 0; font-size: 12px; font-family: var(--mono); }
+.rp-lstate { width: 110px; flex-shrink: 0; font-size: 10px; font-weight: 700; color: var(--muted); font-family: var(--mono); }
+.rp-lstate.READ { color:var(--accent); }
+.rp-lstate.WRITE { color:var(--green); }
+.rp-lstate.RACE { color:var(--red); animation:flk .3s 3; }
+.rp-lstate.LOCKED,.rp-lstate.SEM_ACQUIRED { color:var(--green); }
+.rp-lstate.WAIT_LOCK,.rp-lstate.WAIT_SEM { color:var(--orange); }
+.rp-lstate.SEM_RELEASED,.rp-lstate.UNLOCKED { color:var(--purple); }
+.rp-lstate.DONE { color:var(--muted); opacity:.4; }
+.rp-lbar  { flex: 1; height: 5px; background: var(--bg3); border-radius: 3px; overflow: hidden; }
+.rp-lfill { height: 100%; border-radius: 3px; transition: width .2s, background .2s; background: var(--accent); }
+.rp-lcount { font-size: 10px; color: var(--muted); min-width: 46px; text-align: right; flex-shrink: 0; font-family: var(--mono); }
+.rp-log-head { font-size: 9px; letter-spacing: 1.5px; text-transform: uppercase; color: var(--muted); font-weight: 700; display: grid; grid-template-columns: 46px 36px 120px 44px 44px 1fr; gap: 6px; padding-bottom: 8px; border-bottom: 1px solid var(--bdr2); }
+.rp-log-body { max-height: 200px; overflow-y: auto; }
+.rp-log-body::-webkit-scrollbar { width: 3px; }
+.rp-log-body::-webkit-scrollbar-thumb { background: var(--bg3); border-radius: 2px; }
+.rp-log-row { display: grid; grid-template-columns: 46px 36px 120px 44px 44px 1fr; gap: 6px; padding: 4px 0; border-bottom: 1px solid rgba(255,255,255,.02); font-size: 10.5px; transition: background .08s; }
+.rp-log-row.current { background: rgba(59,158,255,.07); border-radius: 4px; }
+.rp-log-row.race-row { background: rgba(252,92,125,.04); }
+.rp-log-row.future { opacity: .28; }
+.rp-idx  { color: var(--muted); font-size: 10px; font-family: var(--mono); }
+.rp-tid  { color: var(--accent); font-weight: 700; font-family: var(--mono); }
+.rp-st   { font-weight: 700; font-family: var(--mono); font-size: 10px; }
+.rp-st.READ { color:var(--accent); } .rp-st.WRITE { color:var(--green); }
+.rp-st.LOCKED,.rp-st.SEM_ACQUIRED { color:var(--green); }
+.rp-st.UNLOCKED,.rp-st.SEM_RELEASED { color:var(--muted); }
+.rp-st.WAIT_LOCK,.rp-st.WAIT_SEM { color:var(--orange); }
+.rp-st.RACE { color:var(--red); } .rp-st.DONE { color:var(--muted); }
+.rp-note-cell { color: var(--text2); font-size: 10px; }
+.rp-note-cell.race { color: var(--red); font-weight: 600; }
+.rp-finish { display:none; padding:11px 16px; border-radius:8px; margin-bottom:14px; font-size:12px; font-weight:600; text-align:center; }
+.rp-finish.show { display:block; }
+.rp-finish.safe { background:rgba(56,217,169,.08); border:1px solid rgba(56,217,169,.25); color:var(--green); }
+.rp-finish.unsafe { background:rgba(252,92,125,.08); border:1px solid rgba(252,92,125,.25); color:var(--red); }
+</style>
+</head>
+<body>
+<div class="app">
+
+<div class="header">
+  <div>
+    <div class="logo-eyebrow">OS Concurrency Lab</div>
+    <div class="logo-title">Thread<span>Sync</span></div>
+    <div class="logo-sub">Race Condition Visualizer · Resource Allocation Graph</div>
+  </div>
+  <div class="status-pill"><div class="dot" id="dot"></div><span id="status-txt">Idle</span></div>
+</div>
+
+<div class="tabs">
+  <button class="tab au" id="tab0" onclick="setMode(0)">⚡ Unsafe</button>
+  <button class="tab"    id="tab1" onclick="setMode(1)">🔒 Mutex</button>
+  <button class="tab"    id="tab2" onclick="setMode(2)">🔮 Semaphore</button>
+  <div class="tab-sep"></div>
+  <button class="tab"    id="tab3" onclick="openReplay()" style="margin-left:2px">⏮ Replay</button>
+</div>
+
+<!-- SIM PANEL -->
+<div id="sim-panel">
+<div class="grid">
+  <div>
+    <div class="card">
+      <div class="card-title">Configuration</div>
+      <div class="ctrl">
+        <label>Threads <b id="vt">4</b></label>
+        <input type="range" id="ct" min="1" max="8" value="4" oninput="document.getElementById('vt').textContent=this.value">
+      </div>
+      <div class="ctrl">
+        <label>Speed (ms) <b id="vs">300</b></label>
+        <input type="range" id="cs" min="50" max="1500" value="300" step="50" oninput="document.getElementById('vs').textContent=this.value">
+      </div>
+      <div class="ctrl">
+        <label>Iterations <b id="vi">5</b></label>
+        <input type="range" id="ci" min="2" max="10" value="5" oninput="document.getElementById('vi').textContent=this.value">
+      </div>
+      <div class="btns">
+        <button class="btn btn-go" id="btn-run" onclick="runSim()">▶ Run</button>
+        <button class="btn" id="btn-stop" onclick="stopSim()" disabled>■ Stop</button>
+        <button class="btn" onclick="clearAll()">↺</button>
+      </div>
+      <div class="explain eu" id="expl">
+        <strong>Unsafe Mode — No Synchronization</strong><br>
+        Threads read and write the counter freely. Two threads read <span class="kw">counter=5</span>, both write <span class="fn">6</span>. Expected <span class="fn">7</span>, got <span class="fn">6</span>. One increment is silently lost.
+      </div>
+    </div>
+  </div>
+
+  <div class="rcol">
+    <div class="card">
+      <div class="card-title">Shared Counter</div>
+      <div class="chero">
+        <div>
+          <div class="cnum" id="cnum">0</div>
+          <div class="clbl">of <span id="explab">—</span> expected</div>
+        </div>
+        <div class="stats">
+          <div class="sbox"><div class="sval" id="s-race">0</div><div class="skey">Races</div></div>
+          <div class="sbox"><div class="sval" id="s-ev">0</div><div class="skey">Events</div></div>
+          <div class="sbox"><div class="sval" id="s-thr">0</div><div class="skey">Active</div></div>
+          <div class="sbox"><div class="sval" id="s-pct">0%</div><div class="skey">Progress</div></div>
+        </div>
+      </div>
+      <div class="progwrap">
+        <div class="progmeta"><span>0</span><span id="proglab">—</span></div>
+        <div class="progtrack"><div class="progfill pf-r" id="progfill" style="width:0%"></div></div>
+      </div>
+      <div class="alert ad" id="al-r"><span>⚠</span> Race condition detected — counter corrupted by lost updates.</div>
+      <div class="alert ag" id="al-g"><span>✓</span> Safe execution — counter correct, synchronization worked.</div>
+      <div class="alert" id="rp-hint" style="display:none;background:rgba(59,158,255,.07);border:1px solid rgba(59,158,255,.22);color:var(--accent);cursor:pointer;font-size:11px;font-weight:600" onclick="openReplay()"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Thread Status</div>
+      <div class="tgrid" id="tgrid"></div>
+    </div>
+
+    <!-- RESOURCE ALLOCATION GRAPH -->
+    <div class="card">
+      <div class="card-title">Resource Allocation Graph</div>
+      <div id="rag-wrap">
+        <canvas id="rag-canvas" height="310"></canvas>
+        <div class="rag-legend">
+          <span class="rag-leg"><span class="rag-leg-solid" style="background:var(--cyan)"></span> holds (solid)</span>
+          <span class="rag-leg"><span style="color:var(--orange);letter-spacing:2px;font-size:12px">- - -</span>&nbsp; wants (dashed)</span>
+          <span class="rag-leg"><span class="rag-leg-solid" style="background:var(--red)"></span> race / conflict</span>
+          <span style="margin-left:auto;color:var(--muted);font-size:10px">Updates live as threads run</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card">
+      <div class="card-title">Event Log</div>
+      <div class="lhead"><span>+ms</span><span>TID</span><span>STATE</span><span>BEFORE</span><span>AFTER</span><span>NOTE</span></div>
+      <div class="lbody" id="lbody"></div>
+    </div>
+  </div>
+</div>
+</div><!-- /sim-panel -->
+
+<!-- REPLAY PANEL -->
+<div id="replay-panel">
+  <div class="card" style="margin-bottom:16px" id="rp-load-card">
+    <div class="card-title">Load Trace File</div>
+    <div id="rp-last-run-banner" style="display:none;background:rgba(59,158,255,.06);border:1px solid rgba(59,158,255,.18);border-radius:8px;padding:12px 16px;margin-bottom:14px;align-items:center;justify-content:space-between;gap:12px">
+      <div>
+        <div style="font-size:13px;color:var(--accent);font-weight:700" id="rp-last-run-label">Last run ready</div>
+        <div style="font-size:10px;color:var(--text2);margin-top:2px">Click to load into replay viewer</div>
+      </div>
+      <button class="rp-btn" onclick="rpLoadLastRun()" style="white-space:nowrap">⚡ Load Last Run</button>
+    </div>
+    <div class="drop-zone" id="rp-drop" onclick="document.getElementById('rp-file-input').click()" ondragover="rpDragOver(event)" ondragleave="rpDragLeave()" ondrop="rpDrop(event)">
+      <div class="dz-icon">📂</div>
+      <div>Drop <code>trace.log</code> here or click to browse</div>
+      <div class="dz-hint">JSON-per-line format produced by the Java simulator</div>
+    </div>
+    <input type="file" id="rp-file-input" accept=".log,.txt,application/json" style="display:none" onchange="rpFileChosen(this)">
+    <div style="text-align:center;margin-top:12px">
+      <button class="rp-btn" onclick="rpLoadSample()" style="font-size:10px">⚡ Load built-in sample (UNSAFE)</button>
+    </div>
+  </div>
+
+  <div id="rp-controls" style="display:none">
+    <div class="rp-finish" id="rp-finish"></div>
+    <div class="rp-bar">
+      <button class="rp-btn" onclick="rpRestart()">⏮ Restart</button>
+      <button class="rp-btn" onclick="rpStep(-1)">◀ Step</button>
+      <button class="rp-btn" id="rp-play" onclick="rpTogglePlay()">▶ Play</button>
+      <button class="rp-btn" onclick="rpStep(1)">Step ▶</button>
+      <button class="rp-btn danger" onclick="rpClose()">✕ Close</button>
+      <button class="rp-btn" onclick="rpShowLoadCard()" style="font-size:10px">📂 New File</button>
+      <div class="rp-speed-wrap">
+        <label>Speed</label>
+        <input type="range" id="rp-speed" min="50" max="1500" value="400" step="50" oninput="document.getElementById('rp-spd-lbl').textContent=this.value+'ms';rpUpdateInterval()">
+        <span id="rp-spd-lbl" style="font-size:10px;color:var(--muted);min-width:38px;font-family:var(--mono)">400ms</span>
+      </div>
+    </div>
+
+    <div class="card rp-scrub-wrap" style="margin-bottom:14px">
+      <div class="rp-scrub-meta">
+        <span style="font-weight:600">Event <span id="rp-cursor-lbl" style="color:var(--accent);font-family:var(--mono)">0</span> / <span id="rp-total-lbl" style="font-family:var(--mono)">0</span></span>
+        <span id="rp-ts-lbl" style="color:var(--muted);font-family:var(--mono)"></span>
+      </div>
+      <input type="range" class="rp-scrub" id="rp-scrub" min="0" value="0" oninput="rpSeek(+this.value)">
+    </div>
+
+    <div class="rp-stats">
+      <div class="rp-stat"><div class="rsv" id="rp-s-ev">0</div><div class="rsk">Events</div></div>
+      <div class="rp-stat"><div class="rsv" id="rp-s-thr">0</div><div class="rsk">Threads</div></div>
+      <div class="rp-stat"><div class="rsv" id="rp-s-race">0</div><div class="rsk">Races</div></div>
+      <div class="rp-stat"><div class="rsv" id="rp-s-writes">0</div><div class="rsk">Writes</div></div>
+      <div class="rp-stat"><div class="rsv" id="rp-s-final">—</div><div class="rsk">Final</div></div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title" style="margin-bottom:10px">Current Event</div>
+      <div class="rp-spotlight">
+        <div class="rp-spot-tid" id="rp-spot-tid">—</div>
+        <div class="rp-spot-body">
+          <div class="rp-spot-state" id="rp-spot-state">Press Play to begin…</div>
+          <div class="rp-spot-note"  id="rp-spot-note"></div>
+        </div>
+        <div class="rp-spot-vals">
+          <div class="rp-spot-val">Before: <span id="rp-spot-before">—</span></div>
+          <div class="rp-spot-val">After:&nbsp; <span id="rp-spot-after">—</span></div>
+        </div>
+      </div>
+    </div>
+
+    <!-- Replay RAG -->
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title">Resource Allocation Graph — at cursor</div>
+      <div id="rp-rag-wrap">
+        <canvas id="rp-rag-canvas" height="280"></canvas>
+        <div class="rag-legend">
+          <span class="rag-leg"><span class="rag-leg-solid" style="background:var(--cyan)"></span> holds</span>
+          <span class="rag-leg"><span style="color:var(--orange);letter-spacing:2px">- -</span>&nbsp;wants</span>
+          <span class="rag-leg"><span class="rag-leg-solid" style="background:var(--red)"></span> race</span>
+        </div>
+      </div>
+    </div>
+
+    <div class="card" style="margin-bottom:14px">
+      <div class="card-title" style="margin-bottom:10px">Thread State at Cursor</div>
+      <div id="rp-lanes"></div>
+    </div>
+
+    <div class="card">
+      <div class="card-title" style="margin-bottom:10px">Event Log</div>
+      <div class="rp-log-head"><span>#</span><span>TID</span><span>STATE</span><span>BEFORE</span><span>AFTER</span><span>NOTE</span></div>
+      <div class="rp-log-body" id="rp-log-body"></div>
+    </div>
+  </div>
+</div>
+
+</div><!-- /app -->
+<script>
+// ══════════════════════════════════════════════════
+//  SIM ENGINE
+// ══════════════════════════════════════════════════
+let mode=0,running=false,iv=null;
+let cnt=0,races=0,evs=0,done=0;
+let nT=4,nI=5,spd=300;
+let allEv=[],tl={},td={};
+let mxH=-1,smC=1,mxQ=[],smQ=[];
+let t0=0;
+const MC=['au','am','as'];
+const PC=['pf-r','pf-m','pf-s'];
+const EX=[
+  `<strong>Unsafe Mode — No Synchronization</strong><br>Threads read and write the counter freely. Two threads read <span class="kw">counter=5</span>, both write <span class="fn">6</span>. Expected <span class="fn">7</span>, got <span class="fn">6</span>. One increment is silently lost.`,
+  `<strong>Mutex Mode — Mutual Exclusion</strong><br>A <span class="kw">ReentrantLock</span> serialises access. Only one thread holds it at a time — others block at <span class="fn">lock()</span> until the holder calls <span class="fn">unlock()</span>. No races possible.`,
+  `<strong>Semaphore Mode — Permit-Based Sync</strong><br>A <span class="kw">Semaphore(1)</span> guards the section. <span class="fn">acquire()</span>&nbsp;=&nbsp;P() decrements; blocks if 0. <span class="fn">release()</span>&nbsp;=&nbsp;V() increments; wakes a waiter.`
+];
+
+function setMode(m){
+  if(document.getElementById('replay-panel').classList.contains('visible')){
+    rpPause();
+    document.getElementById('replay-panel').classList.remove('visible');
+    document.getElementById('sim-panel').classList.remove('hidden');
+    document.getElementById('tab3').className='tab';
+  }
+  mode=m;
+  for(let i=0;i<3;i++) document.getElementById('tab'+i).className='tab'+(i===m?' '+MC[m]:'');
+  document.getElementById('expl').innerHTML=EX[m];
+  document.getElementById('expl').className='explain '+['eu','em','es'][m];
+  document.getElementById('progfill').className='progfill '+PC[m];
+  drawRAG();
+}
+function init(){
+  nT=+document.getElementById('ct').value;
+  nI=+document.getElementById('ci').value;
+  spd=+document.getElementById('cs').value;
+  cnt=0;races=0;evs=0;done=0;allEv=[];tl={};td={};
+  mxH=-1;smC=1;mxQ=[];smQ=[];t0=Date.now();
+  const ex=nT*nI;
+  document.getElementById('explab').textContent=ex;
+  document.getElementById('proglab').textContent=ex;
+  ['al-r','al-g'].forEach(id=>document.getElementById(id).classList.remove('show'));
+  document.getElementById('lbody').innerHTML='';
+  document.getElementById('s-race').textContent='0';
+  document.getElementById('s-race').className='sval';
+  document.getElementById('s-ev').textContent='0';
+  document.getElementById('s-thr').textContent=nT;
+  document.getElementById('s-pct').textContent='0%';
+  for(let i=0;i<nT;i++){tl[i]=[];td[i]={left:nI,ph:'READ',lv:0,w:0,r:0};}
+  buildCards();drawRAG();
+}
+function tick(){
+  if(!running)return;
+  let any=false;
+  for(let i=0;i<nT;i++){
+    if(td[i].ph==='DONE')continue;
+    any=true;
+    if(Math.random()<0.3)continue;
+    mode===0?stepU(i):mode===1?stepM(i):stepS(i);
+  }
+  if(!any){finish();return;}
+  updateStats();drawRAG();
+}
+function stepU(i){
+  const t=td[i];
+  if(t.ph==='READ'){t.lv=cnt;emit(i,'READ',cnt,cnt,'reading counter');tl[i].push('R');t.ph='WRITE';}
+  else{const b=cnt;t.lv++;cnt=t.lv;const rc=cnt!==b+1;if(rc){races++;t.r++;}emit(i,'WRITE',b,cnt,rc?'RACE DETECTED':'ok');tl[i].push(rc?'X':'W');t.w++;t.left--;if(t.left<=0){emit(i,'DONE',cnt,cnt,'thread finished');tl[i].push('D');t.ph='DONE';done++;}else t.ph='READ';}
+}
+function stepM(i){
+  const t=td[i];
+  if(t.ph==='READ'){emit(i,'WAIT_LOCK',cnt,cnt,'waiting for mutex');tl[i].push('-');t.ph='WAIT';if(!mxQ.includes(i))mxQ.push(i);}
+  else if(t.ph==='WAIT'){if(mxH===-1&&mxQ[0]===i){mxH=i;mxQ.shift();emit(i,'LOCKED',cnt,cnt,'acquired mutex');tl[i].push('L');t.ph='LOCKED';}else tl[i].push('-');}
+  else if(t.ph==='LOCKED'){const b=cnt;cnt++;emit(i,'WRITE',b,cnt,'safe write');tl[i].push('W');t.w++;t.ph='UNLOCK';}
+  else{mxH=-1;emit(i,'UNLOCKED',cnt,cnt,'released mutex');tl[i].push('U');t.left--;if(t.left<=0){emit(i,'DONE',cnt,cnt,'thread finished');tl[i].push('D');t.ph='DONE';done++;}else t.ph='READ';}
+}
+function stepS(i){
+  const t=td[i];
+  if(t.ph==='READ'){emit(i,'WAIT_SEM',cnt,cnt,'waiting on semaphore');tl[i].push('-');t.ph='WAIT';if(!smQ.includes(i))smQ.push(i);}
+  else if(t.ph==='WAIT'){if(smC>0&&smQ[0]===i){smC--;smQ.shift();emit(i,'SEM_ACQUIRED',cnt,cnt,'semaphore acquired');tl[i].push('S');t.ph='LOCKED';}else tl[i].push('-');}
+  else if(t.ph==='LOCKED'){const b=cnt;cnt++;emit(i,'WRITE',b,cnt,'safe write via semaphore');tl[i].push('W');t.w++;t.ph='UNLOCK';}
+  else{smC++;emit(i,'SEM_RELEASED',cnt,cnt,'semaphore released');tl[i].push('s');t.left--;if(t.left<=0){emit(i,'DONE',cnt,cnt,'thread finished');tl[i].push('D');t.ph='DONE';done++;}else t.ph='READ';}
+}
+function emit(i,st,b,a,n){const e={tid:i,state:st,before:b,after:a,note:n,ts:Date.now()};allEv.push(e);evs++;updCard(i,e);updCnt(e);addLog(e);}
+function updCnt(e){
+  const el=document.getElementById('cnum');el.textContent=cnt;el.className='cnum';
+  if(e.note.includes('RACE'))el.classList.add('cr');else if(e.state==='WRITE')el.classList.add('cw');
+  const ex=nT*nI,pct=Math.min(100,Math.round(cnt/ex*100));
+  document.getElementById('progfill').style.width=pct+'%';document.getElementById('s-pct').textContent=pct+'%';
+}
+function updateStats(){
+  const act=Object.values(td).filter(t=>t.ph!=='DONE').length;
+  document.getElementById('s-thr').textContent=act;document.getElementById('s-ev').textContent=evs;
+  const re=document.getElementById('s-race');re.textContent=races;re.className='sval'+(races>0?' bad':'');
+}
+function buildCards(){
+  const g=document.getElementById('tgrid');g.innerHTML='';
+  for(let i=0;i<nT;i++){
+    const d=document.createElement('div');d.className='tc';d.id='tc'+i;
+    d.innerHTML=`<div class="tid">Thread ${i}</div><div class="tst" id="ts${i}">IDLE</div><div class="tnote" id="tn${i}">waiting to start</div><div class="tptrack"><div class="tpfill" id="tp${i}" style="width:0%"></div></div>`;
+    g.appendChild(d);
+  }
+}
+function updCard(i,e){
+  const c=document.getElementById('tc'+i);if(!c)return;
+  const rc=e.note.includes('RACE');
+  document.getElementById('ts'+i).textContent=rc?'RACE!':e.state;
+  document.getElementById('ts'+i).className='tst '+(rc?'RACE':e.state);
+  const n=document.getElementById('tn'+i);n.textContent=e.note;n.className='tnote'+(rc?' ir':'');
+  c.className='tc '+(['WAIT_LOCK','WAIT_SEM'].includes(e.state)?'stw':['LOCKED','SEM_ACQUIRED'].includes(e.state)?'stl':rc?'str':e.state==='DONE'?'std':'sta');
+  const t=td[i],pct=t?Math.round((nI-t.left)/nI*100):0;document.getElementById('tp'+i).style.width=pct+'%';
+}
+function addLog(e){
+  const b=document.getElementById('lbody'),rc=e.note.includes('RACE');
+  const rel=allEv.length>1?'+'+(e.ts-allEv[0].ts)+'ms':'0ms';
+  const r=document.createElement('div');r.className='lrow'+(rc?' ir':'');
+  r.innerHTML=`<span class="lt">${rel}</span><span class="ltid">T${e.tid}</span><span class="lst ${e.state}">${e.state}</span><span style="color:var(--text2)">${e.before}</span><span style="color:var(--text)">${e.after}</span><span class="ln${rc?' ir':''}">${e.note}</span>`;
+  b.prepend(r);while(b.children.length>120)b.removeChild(b.lastChild);
+}
+function runSim(){
+  if(running)return;running=true;
+  document.getElementById('btn-run').disabled=true;document.getElementById('btn-stop').disabled=false;
+  document.getElementById('dot').className='dot on';document.getElementById('status-txt').textContent='Running';
+  init();iv=setInterval(tick,Math.max(70,spd*0.35));
+}
+function stopSim(){
+  running=false;clearInterval(iv);
+  document.getElementById('btn-run').disabled=false;document.getElementById('btn-stop').disabled=true;
+  document.getElementById('dot').className='dot';document.getElementById('status-txt').textContent='Stopped';
+}
+function finish(){
+  stopSim();document.getElementById('status-txt').textContent='Done';
+  document.getElementById('al-r').classList.toggle('show',races>0);
+  document.getElementById('al-g').classList.toggle('show',races===0);
+  const re=document.getElementById('s-race');re.textContent=races;re.className='sval'+(races>0?' bad':' good');
+  drawRAG();
+  for(let i=0;i<nT;i++){const c=document.getElementById('tc'+i);if(c){c.className='tc std';document.getElementById('tp'+i).style.width='100%';}}
+  const modeName=['UNSAFE','MUTEX','SEMAPHORE'][mode];
+  window._lastRunTrace=allEv.map(e=>JSON.stringify({ts:e.ts*1e6,tid:e.tid,state:e.state,before:e.before,after:e.after,note:e.note})).join('\n');
+  window._lastRunMode=modeName;
+  document.getElementById('tab3').title=`⏮ Replay — ${modeName} (${allEv.length} events)`;
+  document.getElementById('rp-hint').style.display='flex';
+  document.getElementById('rp-hint').textContent=`▶ ${modeName} run complete — ${allEv.length} events. Click to open Replay ↑`;
+}
+function clearAll(){
+  stopSim();cnt=0;races=0;evs=0;done=0;allEv=[];tl={};td={};
+  document.getElementById('cnum').textContent='0';document.getElementById('cnum').className='cnum';
+  document.getElementById('progfill').style.width='0%';
+  ['s-pct','s-race','s-ev','s-thr'].forEach(id=>document.getElementById(id).textContent='0');
+  document.getElementById('s-pct').textContent='0%';
+  document.getElementById('explab').textContent='—';document.getElementById('proglab').textContent='—';
+  document.getElementById('al-r').classList.remove('show');document.getElementById('al-g').classList.remove('show');
+  document.getElementById('rp-hint').style.display='none';
+  document.getElementById('lbody').innerHTML='';document.getElementById('tgrid').innerHTML='';
+  document.getElementById('status-txt').textContent='Idle';document.getElementById('dot').className='dot';
+  drawRAG();
+}
+
+// ══════════════════════════════════════════════════
+//  RESOURCE ALLOCATION GRAPH
+// ══════════════════════════════════════════════════
+const COL_PROC ='#d4a017';
+const COL_HOLD ='#00d2ff';
+const COL_WANT ='#fd9644';
+const COL_RACE ='#fc5c7d';
+const RES_NAMES=[
+  ['Counter','—','—','—'],
+  ['ReentrantLock','Counter','—','—'],
+  ['Semaphore(1)','Counter','—','—'],
+];
+const RES_COL=['#fc5c7d','#38d9a9','#9b72f8'];
+
+function ragLayout(canvas,nT,nR){
+  const W=canvas.offsetWidth||canvas.parentElement.clientWidth||700;
+  canvas.width=W;
+  const H=+canvas.getAttribute('height')||300;
+  const threads=[],resources=[];
+  const tSp=Math.min(76,(H-60)/Math.max(nT-1,1));
+  const tY=H/2-(tSp*(nT-1))/2;
+  for(let i=0;i<nT;i++) threads.push({x:W*0.2,y:tY+i*tSp,r:28,id:i});
+  const rSp=Math.min(70,(H-60)/Math.max(nR-1,1));
+  const rY=H/2-(rSp*(nR-1))/2;
+  for(let i=0;i<nR;i++) resources.push({x:W*0.76,y:rY+i*rSp,w:88,h:34,id:i});
+  return{threads,resources,W,H};
+}
+
+function rrect(ctx,x,y,w,h,r){
+  ctx.beginPath();
+  ctx.moveTo(x+r,y);ctx.lineTo(x+w-r,y);ctx.arcTo(x+w,y,x+w,y+r,r);
+  ctx.lineTo(x+w,y+h-r);ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+  ctx.lineTo(x+r,y+h);ctx.arcTo(x,y+h,x,y+h-r,r);
+  ctx.lineTo(x,y+r);ctx.arcTo(x,y,x+r,y,r);
+  ctx.closePath();
+}
+
+function drawRAGFull(canvasId,threadNodes,resourceNodes,edges,W,H,mIdx){
+  const canvas=document.getElementById(canvasId);if(!canvas)return;
+  const ctx=canvas.getContext('2d');
+  ctx.clearRect(0,0,W,H);
+  const rcol=RES_COL[mIdx]||RES_COL[0];
+
+  // Edges
+  edges.forEach(e=>{
+    const t=threadNodes.find(x=>x.id===e.tid);
+    const r=resourceNodes.find(x=>x.id===e.rid);
+    if(!t||!r)return;
+    const isHold=e.type==='hold',isRace=e.type==='race';
+    const col=isRace?COL_RACE:isHold?COL_HOLD:COL_WANT;
+    let x1,y1,x2,y2;
+    if(isHold){x1=r.x-r.w/2-2;y1=r.y;x2=t.x+t.r+2;y2=t.y;}
+    else{x1=t.x+t.r+2;y1=t.y;x2=r.x-r.w/2-2;y2=r.y;}
+    const mx=(x1+x2)/2,my=(y1+y2)/2;
+    const cv=(e.tid-(threadNodes.length-1)/2)*20;
+    ctx.save();
+    ctx.strokeStyle=col;ctx.lineWidth=isRace?2.2:1.8;ctx.globalAlpha=isRace?1:.88;
+    if(!isHold&&!isRace)ctx.setLineDash([5,5]);else ctx.setLineDash([]);
+    ctx.beginPath();ctx.moveTo(x1,y1);ctx.quadraticCurveTo(mx,my+cv,x2,y2);ctx.stroke();
+    // arrowhead
+    const ang=Math.atan2(y2-(my+cv),x2-mx);const hs=8;
+    ctx.beginPath();ctx.moveTo(x2,y2);
+    ctx.lineTo(x2-hs*Math.cos(ang-.4),y2-hs*Math.sin(ang-.4));
+    ctx.lineTo(x2-hs*Math.cos(ang+.4),y2-hs*Math.sin(ang+.4));
+    ctx.closePath();ctx.fillStyle=col;ctx.setLineDash([]);ctx.fill();
+    // edge label
+    ctx.globalAlpha=.75;ctx.font='9px Inter,sans-serif';ctx.fillStyle=col;ctx.textAlign='center';
+    ctx.fillText(isRace?'race':isHold?'holds':'wants',mx+16,my+cv-5);
+    ctx.restore();
+  });
+
+  // Thread nodes
+  const NAMES=['Alpha','Beta','Gamma','Delta','Epsilon','Zeta','Eta','Theta'];
+  threadNodes.forEach((t,i)=>{
+    ctx.save();
+    const isRaceT=t.race,isActive=t.active;
+    if(isActive){
+      const g=ctx.createRadialGradient(t.x,t.y,t.r*.4,t.x,t.y,t.r*1.7);
+      g.addColorStop(0,isRaceT?'rgba(252,92,125,.15)':'rgba(212,160,23,.15)');
+      g.addColorStop(1,'transparent');
+      ctx.fillStyle=g;ctx.beginPath();ctx.arc(t.x,t.y,t.r*1.7,0,Math.PI*2);ctx.fill();
+    }
+    ctx.beginPath();ctx.arc(t.x,t.y,t.r,0,Math.PI*2);
+    ctx.fillStyle='#161e2e';ctx.fill();
+    ctx.strokeStyle=isRaceT?COL_RACE:COL_PROC;ctx.lineWidth=isRaceT?2.5:2;ctx.stroke();
+    ctx.beginPath();ctx.arc(t.x,t.y,t.r-6,0,Math.PI*2);
+    ctx.strokeStyle=isRaceT?'rgba(252,92,125,.35)':'rgba(212,160,23,.35)';ctx.lineWidth=1;ctx.stroke();
+    ctx.font='bold 11px Inter,sans-serif';ctx.fillStyle=isRaceT?COL_RACE:COL_PROC;ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('P'+(t.id+1),t.x,t.y-5);
+    ctx.font='9px Inter,sans-serif';ctx.fillStyle=isRaceT?COL_RACE:'rgba(212,160,23,.7)';
+    ctx.fillText(NAMES[i]||'T'+t.id,t.x,t.y+6);
+    ctx.restore();
+  });
+
+  // Resource nodes
+  const rnames=RES_NAMES[mIdx]||RES_NAMES[0];
+  resourceNodes.forEach((r,i)=>{
+    if(!r.active)return;
+    ctx.save();
+    const hasConflict=r.conflict;
+    rrect(ctx,r.x-r.w/2,r.y-r.h/2,r.w,r.h,6);
+    ctx.fillStyle='#161e2e';ctx.fill();
+    ctx.strokeStyle=hasConflict?COL_RACE:rcol;ctx.lineWidth=hasConflict?2.5:1.8;ctx.stroke();
+    ctx.font='bold 11px Inter,sans-serif';ctx.fillStyle=hasConflict?COL_RACE:rcol;ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('R'+(i+1),r.x,r.y-6);
+    ctx.font='9px Inter,sans-serif';ctx.fillStyle='rgba(255,255,255,.4)';
+    ctx.fillText(rnames[i]||'',r.x,r.y+6);
+    ctx.restore();
+  });
+
+  if(threadNodes.length===0){
+    ctx.font='13px Inter,sans-serif';ctx.fillStyle='rgba(255,255,255,.12)';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('Run a simulation to see the Resource Allocation Graph',W/2,H/2);
+  }
+}
+
+function buildRAGState(){
+  const numT=Object.keys(td).length;
+  if(numT===0)return null;
+  const NAMES=['Alpha','Beta','Gamma','Delta','Epsilon','Zeta','Eta','Theta'];
+  const threads=[];
+  for(let i=0;i<numT;i++) threads.push({id:i,name:NAMES[i]||'T'+i,active:td[i].ph!=='DONE',race:td[i].r>0});
+  const edges=[];
+  const resources=[
+    {id:0,active:true, conflict:races>0&&mode===0},
+    {id:1,active:mode!==0,conflict:false},
+    {id:2,active:false,conflict:false},
+    {id:3,active:false,conflict:false},
+  ];
+  if(mode===0){
+    for(let i=0;i<numT;i++){
+      const t=td[i];if(t.ph==='DONE')continue;
+      if(t.r>0)edges.push({tid:i,rid:0,type:'race'});
+      else if(t.ph==='WRITE')edges.push({tid:i,rid:0,type:'hold'});
+      else edges.push({tid:i,rid:0,type:'want'});
+    }
+  }else if(mode===1){
+    for(let i=0;i<numT;i++){
+      const t=td[i];if(t.ph==='DONE')continue;
+      if(t.ph==='LOCKED'||t.ph==='UNLOCK'){edges.push({tid:i,rid:0,type:'hold'});edges.push({tid:i,rid:1,type:'hold'});}
+      else if(t.ph==='WAIT')edges.push({tid:i,rid:0,type:'want'});
+    }
+  }else{
+    for(let i=0;i<numT;i++){
+      const t=td[i];if(t.ph==='DONE')continue;
+      if(t.ph==='LOCKED'||t.ph==='UNLOCK'){edges.push({tid:i,rid:0,type:'hold'});edges.push({tid:i,rid:1,type:'hold'});}
+      else if(t.ph==='WAIT')edges.push({tid:i,rid:0,type:'want'});
+    }
+  }
+  return{threads,resources,edges};
+}
+
+function drawRAG(){
+  const canvas=document.getElementById('rag-canvas');if(!canvas)return;
+  const W=canvas.offsetWidth||canvas.parentElement.clientWidth||700;
+  canvas.width=W;
+  const H=+canvas.getAttribute('height')||310;
+  const state=buildRAGState();
+  if(!state){
+    const ctx=canvas.getContext('2d');ctx.clearRect(0,0,W,H);
+    ctx.font='13px Inter,sans-serif';ctx.fillStyle='rgba(255,255,255,.11)';
+    ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('Run a simulation to see the Resource Allocation Graph',W/2,H/2);
+    return;
+  }
+  const{threads:tN,resources:rN}=ragLayout(canvas,state.threads.length,4);
+  tN.forEach((n,i)=>Object.assign(n,state.threads[i]));
+  rN.forEach((n,i)=>Object.assign(n,state.resources[i]));
+  drawRAGFull('rag-canvas',tN,rN,state.edges,W,H,mode);
+}
+
+// ══════════════════════════════════════════════════
+//  REPLAY ENGINE
+// ══════════════════════════════════════════════════
+let rpEvents=[],rpCursor=-1,rpPlaying=false,rpIv=null,rpThreads={},rpUserScrolled=false;
+
+const RP_SAMPLE=`{"ts":129900386593,"tid":0,"state":"READ","before":0,"after":0,"note":"reading counter"}
+{"ts":129900929604,"tid":1,"state":"READ","before":0,"after":0,"note":"reading counter"}
+{"ts":129901354441,"tid":2,"state":"READ","before":0,"after":0,"note":"reading counter"}
+{"ts":130005624236,"tid":0,"state":"WRITE","before":1,"after":1,"note":"RACE DETECTED"}
+{"ts":130005737844,"tid":1,"state":"WRITE","before":1,"after":1,"note":"RACE DETECTED"}
+{"ts":130005615116,"tid":2,"state":"WRITE","before":0,"after":1,"note":"ok"}
+{"ts":130057591558,"tid":1,"state":"READ","before":1,"after":1,"note":"reading counter"}
+{"ts":130057759768,"tid":2,"state":"READ","before":1,"after":1,"note":"reading counter"}
+{"ts":130057592551,"tid":0,"state":"READ","before":1,"after":1,"note":"reading counter"}
+{"ts":130159562970,"tid":0,"state":"WRITE","before":2,"after":2,"note":"RACE DETECTED"}
+{"ts":130159705368,"tid":2,"state":"WRITE","before":2,"after":2,"note":"RACE DETECTED"}
+{"ts":130159559619,"tid":1,"state":"WRITE","before":1,"after":2,"note":"ok"}
+{"ts":130211483268,"tid":1,"state":"READ","before":2,"after":2,"note":"reading counter"}
+{"ts":130211650219,"tid":2,"state":"READ","before":2,"after":2,"note":"reading counter"}
+{"ts":130211479654,"tid":0,"state":"READ","before":2,"after":2,"note":"reading counter"}
+{"ts":130314538460,"tid":2,"state":"WRITE","before":2,"after":3,"note":"ok"}
+{"ts":130314600828,"tid":0,"state":"WRITE","before":3,"after":3,"note":"RACE DETECTED"}
+{"ts":130314542684,"tid":1,"state":"WRITE","before":3,"after":3,"note":"RACE DETECTED"}
+{"ts":130782500000,"tid":0,"state":"DONE","before":3,"after":3,"note":"thread finished"}
+{"ts":130782510000,"tid":1,"state":"DONE","before":3,"after":3,"note":"thread finished"}
+{"ts":130782520000,"tid":2,"state":"DONE","before":3,"after":3,"note":"thread finished"}`;
+
+const RP_MODE_INFO={
+  UNSAFE:{label:'⚡ Unsafe — No Synchronization',color:'var(--red)',bg:'rgba(252,92,125,.06)',border:'rgba(252,92,125,.22)',
+    desc:'Threads access the shared counter with <strong>no locking</strong>. The RAG shows all active threads competing for the Counter resource simultaneously — when multiple threads hold "WRITE" edges to the same resource at the same time, a race occurs.',
+    legend:[{sym:'READ',cls:'READ',tip:'Thread reads counter'},{sym:'WRITE',cls:'WRITE',tip:'Thread writes (may collide)'},{sym:'RACE',cls:'RACE',tip:'Lost update — collision'},{sym:'DONE',cls:'DONE',tip:'Thread finished'}]},
+  MUTEX:{label:'🔒 Mutex — ReentrantLock',color:'var(--green)',bg:'rgba(56,217,169,.06)',border:'rgba(56,217,169,.22)',
+    desc:'A <strong>ReentrantLock</strong> serialises counter access. In the RAG, only one thread shows a solid "holds" edge to R1 (the lock) at any time. All other active threads show dashed "wants" edges. No race conditions are possible.',
+    legend:[{sym:'WAIT_LOCK',cls:'WAIT_LOCK',tip:'Wants lock — blocked'},{sym:'LOCKED',cls:'LOCKED',tip:'Holds lock — critical section'},{sym:'WRITE',cls:'WRITE',tip:'Safe write'},{sym:'UNLOCKED',cls:'UNLOCKED',tip:'Released lock'},{sym:'DONE',cls:'DONE',tip:'Thread finished'}]},
+  SEMAPHORE:{label:'🔮 Semaphore — Permit-Based',color:'var(--purple)',bg:'rgba(155,114,248,.06)',border:'rgba(155,114,248,.22)',
+    desc:'A <strong>Semaphore(1)</strong> controls access via permits. The RAG shows the permit holder with a solid "holds" edge to R1 (the semaphore) and all waiting threads with dashed "wants" edges. V() releases the permit, unblocking the next waiter.',
+    legend:[{sym:'WAIT_SEM',cls:'WAIT_SEM',tip:'Wants permit — blocked'},{sym:'SEM_ACQUIRED',cls:'SEM_ACQUIRED',tip:'Holds permit — P() done'},{sym:'WRITE',cls:'WRITE',tip:'Safe write'},{sym:'SEM_RELEASED',cls:'SEM_RELEASED',tip:'V() called'},{sym:'DONE',cls:'DONE',tip:'Thread finished'}]}
+};
+
+function rpDetectMode(evs){
+  const st=new Set(evs.map(e=>e.state));
+  if(st.has('WAIT_LOCK')||st.has('LOCKED')||st.has('UNLOCKED'))return'MUTEX';
+  if(st.has('WAIT_SEM')||st.has('SEM_ACQUIRED')||st.has('SEM_RELEASED'))return'SEMAPHORE';
+  return'UNSAFE';
+}
+function rpModeIndex(n){return{UNSAFE:0,MUTEX:1,SEMAPHORE:2}[n]||0;}
+function rpParseText(text){
+  const events=[];
+  for(const line of text.split('\n')){const t=line.trim();if(!t||t[0]!=='{')continue;
+    try{const o=JSON.parse(t);if(o.ts!==undefined&&o.tid!==undefined&&o.state)events.push({ts:o.ts,tid:o.tid,state:o.state,before:o.before??0,after:o.after??0,note:o.note??''});}catch(e){}}
+  return events;
+}
+function rpDragOver(e){e.preventDefault();document.getElementById('rp-drop').classList.add('drag');}
+function rpDragLeave(){document.getElementById('rp-drop').classList.remove('drag');}
+function rpDrop(e){e.preventDefault();document.getElementById('rp-drop').classList.remove('drag');const f=e.dataTransfer.files[0];if(f)rpReadFile(f);}
+function rpFileChosen(inp){if(inp.files[0])rpReadFile(inp.files[0]);}
+function rpReadFile(f){const r=new FileReader();r.onload=ev=>rpLoad(ev.target.result);r.readAsText(f);}
+function rpLoadSample(){window._lastRunMode='UNSAFE';rpLoad(RP_SAMPLE);}
+function rpLoadLastRun(){if(window._lastRunTrace)rpLoad(window._lastRunTrace);}
+function rpRefreshLastRunBanner(){
+  const b=document.getElementById('rp-last-run-banner');
+  if(window._lastRunTrace&&window._lastRunTrace.length){b.style.display='flex';const ec=window._lastRunTrace.split('\n').filter(l=>l.trim().startsWith('{')).length;document.getElementById('rp-last-run-label').textContent=`Last run: ${window._lastRunMode||'Simulation'} — ${ec} events`;}
+  else b.style.display='none';
+}
+
+function rpLoad(text){
+  const evs=rpParseText(text);if(!evs.length){alert('No valid trace events found.');return;}
+  rpEvents=evs;rpCursor=-1;rpPlaying=false;clearInterval(rpIv);rpIv=null;
+  const dm=window._lastRunMode&&['UNSAFE','MUTEX','SEMAPHORE'].includes(window._lastRunMode)?window._lastRunMode:rpDetectMode(evs);
+  const mInfo=RP_MODE_INFO[dm];
+  let banner=document.getElementById('rp-mode-banner');
+  if(!banner){banner=document.createElement('div');banner.id='rp-mode-banner';banner.style.cssText='border-radius:9px;padding:14px 18px;margin-bottom:14px;font-size:12px;line-height:1.8';document.getElementById('rp-controls').insertBefore(banner,document.getElementById('rp-controls').firstChild);}
+  banner.style.background=mInfo.bg;banner.style.border=`1px solid ${mInfo.border}`;
+  banner.innerHTML=`<div style="font-weight:700;font-size:13px;color:${mInfo.color};margin-bottom:7px">${mInfo.label}</div><div style="color:var(--text2);margin-bottom:12px;line-height:1.7">${mInfo.desc}</div><div style="display:flex;flex-wrap:wrap;gap:12px">${mInfo.legend.map(l=>`<span title="${l.tip}" style="display:flex;align-items:center;gap:5px;font-size:10px;color:var(--text2);cursor:help"><span class="rp-st ${l.cls}" style="font-size:10px">${l.sym}</span><span>${l.tip}</span></span>`).join('')}</div>`;
+  const tids=[...new Set(evs.map(e=>e.tid))].sort((a,b)=>a-b);
+  rpThreads={};tids.forEach(tid=>rpThreads[tid]={lastState:'IDLE',eventCount:0,raceCount:0});
+  const tr=evs.filter(e=>e.note&&e.note.includes('RACE')).length;
+  const tw=evs.filter(e=>e.state==='WRITE').length;
+  document.getElementById('rp-s-ev').textContent=evs.length;
+  document.getElementById('rp-s-thr').textContent=tids.length;
+  document.getElementById('rp-s-race').textContent=tr;
+  document.getElementById('rp-s-race').className='rsv'+(tr>0?' bad':' good');
+  document.getElementById('rp-s-writes').textContent=tw;
+  document.getElementById('rp-s-final').textContent=evs[evs.length-1].after;
+  const scrub=document.getElementById('rp-scrub');scrub.max=evs.length-1;scrub.value=0;
+  document.getElementById('rp-total-lbl').textContent=evs.length;
+  rpBuildLog();
+  document.getElementById('rp-log-body').onscroll=()=>{if(rpPlaying)rpUserScrolled=true;};
+  rpBuildLanes(tids);
+  document.getElementById('rp-load-card').style.display='none';
+  document.getElementById('rp-controls').style.display='block';
+  document.getElementById('rp-finish').classList.remove('show');
+  document.getElementById('rp-play').textContent='▶ Play';
+  document.getElementById('rp-play').classList.remove('play-active');
+  rpRender();
+}
+function rpBuildLog(){
+  const body=document.getElementById('rp-log-body');body.innerHTML='';
+  rpEvents.forEach((e,i)=>{
+    const ir=e.note&&e.note.includes('RACE');
+    const row=document.createElement('div');row.className='rp-log-row future'+(ir?' race-row':'');row.id='rp-row-'+i;
+    row.innerHTML=`<span class="rp-idx">${i+1}</span><span class="rp-tid">T${e.tid}</span><span class="rp-st ${ir?'RACE':e.state}">${ir?'RACE!':e.state}</span><span style="color:var(--text2)">${e.before}</span><span style="color:var(--text)">${e.after}</span><span class="rp-note-cell${ir?' race':''}">${e.note}</span>`;
+    body.appendChild(row);
+  });
+}
+function rpBuildLanes(tids){
+  const wrap=document.getElementById('rp-lanes');wrap.innerHTML='';
+  tids.forEach(tid=>{
+    const div=document.createElement('div');div.className='rp-lane';div.id='rp-lane-'+tid;
+    div.innerHTML=`<span class="rp-lid">T${tid}</span><span class="rp-lstate" id="rp-lst-${tid}">IDLE</span><div class="rp-lbar"><div class="rp-lfill" id="rp-lfill-${tid}" style="width:0%"></div></div><span class="rp-lcount" id="rp-lct-${tid}">0 ev</span>`;
+    wrap.appendChild(div);
+  });
+}
+
+function rpBuildRAGState(cursor){
+  const dm=window._lastRunMode&&['UNSAFE','MUTEX','SEMAPHORE'].includes(window._lastRunMode)?window._lastRunMode:rpDetectMode(rpEvents);
+  const tids=[...new Set(rpEvents.map(e=>e.tid))].sort((a,b)=>a-b);
+  const tState={};tids.forEach(tid=>tState[tid]={state:'IDLE',hasRace:false});
+  for(let i=0;i<=cursor;i++){const e=rpEvents[i];if(tState[e.tid]!==undefined){tState[e.tid].state=e.state;if(e.note&&e.note.includes('RACE'))tState[e.tid].hasRace=true;}}
+  const NAMES=['Alpha','Beta','Gamma','Delta','Epsilon','Zeta','Eta','Theta'];
+  const threads=tids.map((tid,i)=>({id:tid,name:NAMES[i]||'T'+tid,active:tState[tid].state!=='DONE',race:tState[tid].hasRace,cs:tState[tid].state}));
+  const edges=[];
+  if(dm==='UNSAFE'){
+    threads.forEach(t=>{if(!t.active)return;if(t.race)edges.push({tid:t.id,rid:0,type:'race'});else if(t.cs==='WRITE')edges.push({tid:t.id,rid:0,type:'hold'});else if(t.cs==='READ')edges.push({tid:t.id,rid:0,type:'want'});});
+  }else if(dm==='MUTEX'){
+    threads.forEach(t=>{if(!t.active)return;if(t.cs==='LOCKED'||t.cs==='WRITE'||t.cs==='UNLOCKED'){edges.push({tid:t.id,rid:0,type:'hold'});edges.push({tid:t.id,rid:1,type:'hold'});}else if(t.cs==='WAIT_LOCK')edges.push({tid:t.id,rid:0,type:'want'});});
+  }else{
+    threads.forEach(t=>{if(!t.active)return;if(t.cs==='SEM_ACQUIRED'||t.cs==='WRITE'||t.cs==='SEM_RELEASED'){edges.push({tid:t.id,rid:0,type:'hold'});edges.push({tid:t.id,rid:1,type:'hold'});}else if(t.cs==='WAIT_SEM')edges.push({tid:t.id,rid:0,type:'want'});});
+  }
+  const resources=[{id:0,active:true,conflict:edges.some(e=>e.type==='race')},{id:1,active:dm!=='UNSAFE',conflict:false},{id:2,active:false,conflict:false},{id:3,active:false,conflict:false}];
+  return{threads,resources,edges,mIdx:rpModeIndex(dm)};
+}
+
+function rpDrawRAG(){
+  const canvas=document.getElementById('rp-rag-canvas');if(!canvas||!rpEvents.length)return;
+  const W=canvas.offsetWidth||canvas.parentElement.clientWidth||700;
+  canvas.width=W;const H=+canvas.getAttribute('height')||280;
+  if(rpCursor<0){
+    const ctx=canvas.getContext('2d');ctx.clearRect(0,0,W,H);
+    ctx.font='12px Inter,sans-serif';ctx.fillStyle='rgba(255,255,255,.11)';ctx.textAlign='center';ctx.textBaseline='middle';
+    ctx.fillText('Press Play or Step to see the RAG',W/2,H/2);return;
+  }
+  const{threads,resources,edges,mIdx}=rpBuildRAGState(rpCursor);
+  const{threads:tN,resources:rN}=ragLayout(canvas,threads.length,4);
+  tN.forEach((n,i)=>Object.assign(n,threads[i]));
+  rN.forEach((n,i)=>Object.assign(n,resources[i]));
+  drawRAGFull('rp-rag-canvas',tN,rN,edges,W,H,mIdx);
+}
+
+function rpRender(){
+  const tids=Object.keys(rpThreads).map(Number);
+  tids.forEach(tid=>{rpThreads[tid].lastState='IDLE';rpThreads[tid].eventCount=0;rpThreads[tid].raceCount=0;});
+  for(let i=0;i<=rpCursor;i++){const e=rpEvents[i];const t=rpThreads[e.tid];if(!t)continue;const ir=e.note&&e.note.includes('RACE');t.lastState=ir?'RACE':e.state;t.eventCount++;if(ir)t.raceCount++;}
+  const tot={};rpEvents.forEach(e=>{tot[e.tid]=(tot[e.tid]||0)+1;});
+  tids.forEach(tid=>{
+    const t=rpThreads[tid];
+    const stEl=document.getElementById('rp-lst-'+tid);const flEl=document.getElementById('rp-lfill-'+tid);const ctEl=document.getElementById('rp-lct-'+tid);if(!stEl)return;
+    stEl.textContent=t.lastState;stEl.className='rp-lstate '+t.lastState;
+    const pct=tot[tid]?Math.round(t.eventCount/tot[tid]*100):0;
+    flEl.style.width=pct+'%';flEl.style.background=t.raceCount>0?'var(--red)':t.lastState==='DONE'?'var(--muted)':'var(--accent)';
+    ctEl.textContent=t.eventCount+' ev'+(t.raceCount>0?` ✗${t.raceCount}`:'');
+  });
+  if(rpCursor>=0&&rpCursor<rpEvents.length){
+    const e=rpEvents[rpCursor];const ir=e.note&&e.note.includes('RACE');const iw=e.state==='WRITE';
+    const tidEl=document.getElementById('rp-spot-tid');tidEl.textContent='T'+e.tid;tidEl.className='rp-spot-tid'+(ir?' race':iw?' write':'');
+    const stEl=document.getElementById('rp-spot-state');stEl.textContent=ir?'⚠ RACE DETECTED':e.state;stEl.className='rp-spot-state '+(ir?'RACE':e.state);
+    const hints={'READ':'→ Thread reads current counter value','WRITE':ir?'→ LOST UPDATE: another thread already wrote this slot':'→ Thread writes incremented value','WAIT_LOCK':'→ Blocked at lock() — mutex held by another thread','LOCKED':'→ Acquired ReentrantLock — entering critical section','UNLOCKED':'→ Released lock — next waiter may proceed','WAIT_SEM':'→ Blocked at acquire() — semaphore count = 0','SEM_ACQUIRED':'→ Got permit via P() — entering critical section','SEM_RELEASED':'→ V() called — permit returned','DONE':'→ All iterations complete — thread exited'};
+    const ne=document.getElementById('rp-spot-note');ne.textContent=e.note+(hints[e.state]?'  '+hints[e.state]:'');ne.className='rp-spot-note'+(ir?' race':'');
+    document.getElementById('rp-spot-before').textContent=e.before;document.getElementById('rp-spot-after').textContent=e.after;
+    document.getElementById('rp-ts-lbl').textContent='+'+Math.round((e.ts-rpEvents[0].ts)/1e6)+' ms';
+  }else{
+    document.getElementById('rp-spot-tid').textContent='—';
+    document.getElementById('rp-spot-state').textContent=rpCursor<0?'Press Play or Step ▶ to begin':'Replay complete';
+    document.getElementById('rp-spot-note').textContent='';
+    document.getElementById('rp-spot-before').textContent='—';document.getElementById('rp-spot-after').textContent='—';
+    document.getElementById('rp-ts-lbl').textContent='';
+  }
+  document.getElementById('rp-scrub').value=Math.max(0,rpCursor);
+  document.getElementById('rp-cursor-lbl').textContent=rpCursor<0?0:rpCursor+1;
+  rpEvents.forEach((_,i)=>{const row=document.getElementById('rp-row-'+i);if(!row)return;row.classList.remove('current','future');if(i===rpCursor)row.classList.add('current');else if(i>rpCursor)row.classList.add('future');});
+  if(rpCursor>=0&&!rpUserScrolled){const cur=document.getElementById('rp-row-'+rpCursor);if(cur)cur.scrollIntoView({block:'nearest',behavior:'smooth'});}
+  rpDrawRAG();
+  const fe=document.getElementById('rp-finish');
+  if(rpCursor>=rpEvents.length-1){
+    const tr=rpEvents.filter(e=>e.note&&e.note.includes('RACE')).length;
+    const dm=window._lastRunMode&&['UNSAFE','MUTEX','SEMAPHORE'].includes(window._lastRunMode)?window._lastRunMode:rpDetectMode(rpEvents);
+    fe.classList.add('show');
+    if(tr>0){fe.className='rp-finish show unsafe';fe.textContent=`⚠ ${dm} replay complete — ${tr} race condition${tr>1?'s':''} across ${rpEvents.length} events.`;}
+    else{fe.className='rp-finish show safe';const msg=dm==='MUTEX'?'ReentrantLock guaranteed safe execution.':dm==='SEMAPHORE'?'Semaphore permits guaranteed safe execution.':'No races detected.';fe.textContent=`✓ ${dm} replay complete — ${msg} ${rpEvents.length} events.`;}
+    rpPause();
+  }else fe.classList.remove('show');
+}
+
+function rpTogglePlay(){rpPlaying?rpPause():rpPlay();}
+function rpPlay(){
+  if(rpCursor>=rpEvents.length-1)rpRestart();
+  rpPlaying=true;rpUserScrolled=false;
+  document.getElementById('rp-play').textContent='⏸ Pause';document.getElementById('rp-play').classList.add('play-active');
+  const ms=Math.max(50,+document.getElementById('rp-speed').value);
+  rpIv=setInterval(()=>{if(rpCursor>=rpEvents.length-1){rpPause();return;}rpCursor++;rpRender();},ms);
+}
+function rpPause(){rpPlaying=false;clearInterval(rpIv);rpIv=null;document.getElementById('rp-play').textContent='▶ Play';document.getElementById('rp-play').classList.remove('play-active');}
+function rpUpdateInterval(){if(rpPlaying){rpPause();rpPlay();}}
+function rpStep(dir){rpPause();rpCursor=Math.max(-1,Math.min(rpEvents.length-1,rpCursor+dir));rpRender();}
+function rpSeek(idx){rpPause();rpCursor=Math.min(rpEvents.length-1,Math.max(-1,idx-1));rpRender();}
+function rpRestart(){rpPause();rpCursor=-1;rpUserScrolled=false;document.getElementById('rp-finish').classList.remove('show');rpRender();}
+function rpShowLoadCard(){rpPause();document.getElementById('rp-load-card').style.display='block';document.getElementById('rp-controls').style.display='none';rpEvents=[];rpCursor=-1;rpRefreshLastRunBanner();}
+
+function openReplay(){
+  if(running)stopSim();
+  document.getElementById('sim-panel').classList.add('hidden');
+  document.getElementById('replay-panel').classList.add('visible');
+  for(let i=0;i<3;i++) document.getElementById('tab'+i).className='tab';
+  document.getElementById('tab3').className='tab ar';
+  if(rpEvents.length)return;
+  rpRefreshLastRunBanner();
+  if(window._lastRunTrace&&window._lastRunTrace.length)rpLoad(window._lastRunTrace);
+  else{document.getElementById('rp-load-card').style.display='block';document.getElementById('rp-controls').style.display='none';}
+}
+function rpClose(){
+  rpPause();
+  document.getElementById('replay-panel').classList.remove('visible');
+  document.getElementById('sim-panel').classList.remove('hidden');
+  document.getElementById('tab3').className='tab';
+  setMode(mode);
+  if(!rpEvents.length){document.getElementById('rp-load-card').style.display='block';document.getElementById('rp-controls').style.display='none';}
+}
+
+// init
+setMode(0);
+window.addEventListener('resize',()=>{drawRAG();if(rpEvents.length&&rpCursor>=0)rpDrawRAG();});
+</script>
+</body>
+</html>
